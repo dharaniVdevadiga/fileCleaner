@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
-from analyzer import analyze_images
-from file_ops import apply_actions
+from .analyzer import analyze_images
+from .file_ops import apply_actions
 
 app = Flask(__name__)
 
@@ -22,7 +22,7 @@ def analyze():
 def apply():
     data = request.get_json()
     actions = data.get("actions")
-    base_folder = data.get("base_folder") 
+    base_folder = data.get("base_folder")
     if not actions:
         return jsonify({ "error": "Missing actions" }), 400
 
