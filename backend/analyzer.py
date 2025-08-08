@@ -3,10 +3,12 @@ import cv2
 from PIL import Image
 import imagehash
 
-def is_blurry(image_path, threshold=100.0):
+def is_blurry(image_path, threshold=300.0):
     img = cv2.imread(image_path)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     variance = cv2.Laplacian(gray, cv2.CV_64F).var()
+    print(variance)
+    print(variance < threshold)
     return variance < threshold
 
 def analyze_images(folder_path):
@@ -62,3 +64,5 @@ def analyze_images(folder_path):
         image_data.append(data)
 
     return image_data
+
+is_blurry("backend/test.jpg")
