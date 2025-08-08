@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify
-from backend.analyzer import analyze_images
+from analyzer import analyze_images
 from file_ops import apply_actions
 
 app = Flask(__name__)
