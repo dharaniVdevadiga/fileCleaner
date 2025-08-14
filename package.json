@@ -1,0 +1,37 @@
+{
+  "name": "clean-your-images",
+  "version": "0.1.0",
+  "private": true,
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "cd frontend && npm run dev",
+    "dev:electron": "wait-on http-get://localhost:5173 && electron .",
+    "build": "cd frontend && vite build",
+    "dist": "npm run build && electron-builder"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1",
+    "electron": "^30.0.0",
+    "electron-builder": "^24.13.3",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.example.smartimageorganizer",
+    "productName": "Smart Image Organizer",
+    "files": [
+      "electron/**/*",
+      "frontend/dist/**/*",
+      "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "backend",
+        "to": "backend"
+      }
+    ],
+    "directories": {
+      "output": "release"
+    }
+  }
+}

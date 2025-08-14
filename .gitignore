@@ -3,3 +3,17 @@ __pycache__/
 
 .venv/
 venv/
+
+# Node/Electron
+node_modules/
+release/
+dist/
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db
