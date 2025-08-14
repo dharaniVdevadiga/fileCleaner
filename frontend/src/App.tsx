@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import './styles.css'
 
 type Item = {
   file: string
@@ -16,17 +17,19 @@ declare global {
   interface Window {
     electronAPI: {
       chooseFolder: () => Promise<string | null>
+      fileToDataURL: (p: string) => Promise<string>
     }
   }
 }
 
-const API_BASE = 'http://localhost:5000';
+const API_BASE = 'http://localhost:5000'
 
 export default function App() {
   const [screen, setScreen] = useState<'home' | 'loading' | 'preview' | 'done'>('home')
   const [folder, setFolder] = useState<string>('')
   const [items, setItems] = useState<Item[]>([])
   const [toast, setToast] = useState<string>('')
+  const [previews, setPreviews] = useState<Record<string, string>>({}) 
 
   const chooseFolder = async () => {
     const picked = await window.electronAPI.chooseFolder()
@@ -46,15 +49,24 @@ export default function App() {
       if (!res.ok) throw new Error(`Analyze failed: ${res.status}`)
       const data: Item[] = await res.json()
 
-      // ensure each item has editable fields
       const normalized = data.map(it => ({
         ...it,
         action: it.action || 'move',
         suggested_folder: it.suggested_folder ?? 'Clean/'
       }))
+
       setItems(normalized)
+      setPreviews({}) 
       setScreen('preview')
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
+      Promise.allSettled(
+        normalized.map(async (it) => {
+          try {
+            const src = await window.electronAPI.fileToDataURL(it.path)
+            setPreviews(prev => (prev[it.path] ? prev : { ...prev, [it.path]: src }))
+          } catch { /* ignore unreadable files */ }
+        })
+      )
     } catch (e: any) {
       setToast(e.message ?? 'Analyze failed')
       setScreen('home')
@@ -62,11 +74,11 @@ export default function App() {
   }
 
   const toggleAction = (idx: number, newAction: 'delete' | 'move') => {
-    setItems(prev => prev.map((it, i) => i === idx ? { ...it, action: newAction } : it))
+    setItems(prev => prev.map((it, i) => (i === idx ? { ...it, action: newAction } : it)))
   }
 
   const updateSuggestedFolder = (idx: number, folder: string) => {
-    setItems(prev => prev.map((it, i) => i === idx ? { ...it, suggested_folder: folder } : it))
+    setItems(prev => prev.map((it, i) => (i === idx ? { ...it, suggested_folder: folder } : it)))
   }
 
   const applyChanges = async () => {
@@ -76,7 +88,7 @@ export default function App() {
         actions: items.map(it => ({
           path: it.path,
           action: it.action,
-          suggested_folder: it.action === 'move' ? (it.suggested_folder || 'Clean/') : undefined
+          suggested_folder: it.action === 'move' ? it.suggested_folder || 'Clean/' : undefined
         }))
       }
       const res = await fetch(`${API_BASE}/apply-actions`, {
@@ -86,187 +98,154 @@ export default function App() {
       })
       if (!res.ok) throw new Error(`Apply failed: ${res.status}`)
       const summary = await res.json()
-      setToast(`Deleted: ${summary.deleted.length} | Moved: ${summary.moved.length} | Failed: ${summary.failed.length}`)
+      setToast(`Changes applied successfully!  Deleted: ${summary.deleted.length} | Moved: ${summary.moved.length} | Failed: ${summary.failed.length}`)
       setScreen('done')
-      // small reset after success
-      setTimeout(() => { setItems([]); setFolder(''); setScreen('home') }, 1200)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      setTimeout(() => { setItems([]); setFolder(''); setScreen('home'); setToast('') }, 2500)
     } catch (e: any) {
       setToast(e.message ?? 'Apply failed')
     }
   }
 
   return (
-    <div style={{ fontFamily: 'ui-sans-serif, system-ui', padding: 16 }}>
-      <Header toast={toast} clearToast={() => setToast('')} />
-      {screen === 'home' && (
-        <Home
-          folder={folder}
-          onPick={chooseFolder}
-          onAnalyze={analyze}
-        />
-      )}
-      {screen === 'loading' && <Loading />}
-      {screen === 'preview' && (
-        <Preview
-          folder={folder}
-          items={items}
-          onToggle={toggleAction}
-          onFolderChange={updateSuggestedFolder}
-          onConfirm={applyChanges}
-        />
-      )}
-      {screen === 'done' && <Done />}
-    </div>
-  )
-}
-
-function Header({ toast, clearToast }: { toast: string, clearToast: () => void }) {
-  return (
-    <>
-      <h1 style={{ fontSize: 24, marginBottom: 12 }}>Smart Image Organizer</h1>
-      {toast && (
-        <div
-          onClick={clearToast}
-          style={{
-            padding: '8px 12px',
-            background: '#16a34a',
-            color: 'white',
-            borderRadius: 8,
-            marginBottom: 12,
-            cursor: 'pointer',
-            display: 'inline-block'
-          }}
-          title="Click to dismiss"
-        >
-          {toast}
+    <div className="app-window">
+      <div className="app-panel">
+        <div className="window-dots">
+          <span className="dot red" />
+          <span className="dot yellow" />
+          <span className="dot green" />
         </div>
-      )}
-    </>
-  )
-}
 
-function Home({ folder, onPick, onAnalyze }: { folder: string, onPick: () => void, onAnalyze: () => void }) {
-  return (
-    <div>
-      <button onClick={onPick} style={btn}>Choose Folder</button>
-      {folder && (
-        <div style={{ marginTop: 8, fontSize: 12, color: '#555' }}>
-          Selected: {folder}
-        </div>
-      )}
-      <div style={{ marginTop: 16 }}>
-        <button disabled={!folder} onClick={onAnalyze} style={{ ...btn, opacity: folder ? 1 : 0.5 }}>
-          Analyze
-        </button>
+        {toast && (
+          <div className="toast" onClick={() => setToast('')}>
+            {toast} <small>Click to dismiss</small>
+          </div>
+        )}
+
+        {screen === 'home' && <Home folder={folder} onPick={chooseFolder} onAnalyze={analyze} />}
+        {screen === 'loading' && <Loading />}
+        {screen === 'preview' && (
+          <Preview
+            folder={folder}
+            items={items}
+            previews={previews}    
+            onToggle={toggleAction}
+            onFolderChange={updateSuggestedFolder}
+            onConfirm={applyChanges}
+          />
+        )}
+        {screen === 'done' && <Done />}
       </div>
     </div>
   )
 }
 
+/* ---------- Screens ---------- */
+
+function Home({ folder, onPick, onAnalyze }: { folder: string; onPick: () => void; onAnalyze: () => void }) {
+  return (
+    <>
+      <h1 className="h1">1. Pick the folder you want to clean!</h1>
+      <div className="row" style={{ gap: 16 }}>
+        <button className="btn btn-primary" onClick={onPick}>Choose your Folder</button>
+        <button className={`btn btn-soft ${!folder ? 'btn-disabled' : ''}`} disabled={!folder} onClick={onAnalyze}>
+          Clean
+        </button>
+      </div>
+      {folder && <p className="p" style={{ marginTop: 10 }}>Selected: {folder}</p>}
+    </>
+  )
+}
+
 function Loading() {
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ fontSize: 16 }}>Analyzing images…</div>
-    </div>
+    <>
+      <h1 className="h1">2. Wait for the program to clean your files!</h1>
+      <div className="center">
+        <div className="card" style={{ padding: '18px 22px' }}>
+          Analyzing… <span className="spinner" />
+        </div>
+      </div>
+    </>
   )
 }
 
 function Preview({
-  folder, items, onToggle, onFolderChange, onConfirm
+  folder,
+  items,
+  previews,
+  onToggle,
+  onFolderChange,
+  onConfirm
 }: {
-  folder: string,
-  items: Item[],
-  onToggle: (i: number, a: 'delete' | 'move') => void,
-  onFolderChange: (i: number, f: string) => void,
+  folder: string
+  items: Item[]
+  previews: Record<string, string>
+  onToggle: (i: number, a: 'delete' | 'move') => void
+  onFolderChange: (i: number, f: string) => void
   onConfirm: () => void
 }) {
   return (
-    <div>
-      <div style={{ marginBottom: 12, color: '#666' }}>Folder: {folder}</div>
-      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))' }}>
+    <>
+      <h1 className="h1">3. Confirm and Apply Changes!</h1>
+      <div className="p" style={{ marginBottom: 12, color: 'var(--muted)' }}>Folder: {folder}</div>
+
+      <div className="grid">
         {items.map((it, i) => (
-          <div key={it.path} style={card}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <img
-                src={`file://${it.path}`}
-                alt={it.file}
-                style={{ width: 96, height: 96, objectFit: 'cover', borderRadius: 8, border: '1px solid #eee' }}
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
-              />
+          <div className="card" key={it.path}>
+            <div className="row">
+              {previews[it.path] ? (
+                <img className="thumb" src={previews[it.path]} alt={it.file}
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+              ) : (
+                
+                <div className="thumb" style={{display:'grid',placeItems:'center',fontSize:12,color:'#aaa'}}>
+                  No preview
+                </div>
+              )}
+
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis' }}>{it.file}</div>
-                <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
-                  {it.is_blurry ? <Badge text="Blurry" color="#ef4444" /> : <Badge text="Sharp" color="#10b981" />}
-                  {it.status.includes('duplicate') && <Badge text={`Duplicate of ${it.duplicate_of ?? ''}`} color="#f59e0b" />}
-                  {typeof it.blur_score === 'number' && <Badge text={`Blur: ${it.blur_score!.toFixed(1)}`} color="#64748b" />}
+                <div className="h2" style={{ margin: '0 0 6px' }}>{it.file}</div>
+                <div className="row" style={{ flexWrap: 'wrap' }}>
+                  {it.is_blurry ? <Badge text="Blurry" tone="red" /> : <Badge text="Sharp" tone="green" />}
+                  {it.status.includes('duplicate') && <Badge text={`Duplicate of ${it.duplicate_of ?? ''}`} tone="orange" />}
+                  {typeof it.blur_score === 'number' && <Badge text={`Blur: ${it.blur_score!.toFixed(1)}`} tone="gray" />}
                 </div>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 12, marginTop: 12, alignItems: 'center' }}>
+            <div className="row" style={{ marginTop: 12 }}>
               <label>
-                <input
-                  type="radio"
-                  name={`act-${i}`}
-                  checked={it.action === 'delete'}
-                  onChange={() => onToggle(i, 'delete')}
-                /> Delete
+                <input type="radio" name={`act-${i}`} checked={it.action === 'delete'} onChange={() => onToggle(i, 'delete')} /> Delete
               </label>
               <label>
-                <input
-                  type="radio"
-                  name={`act-${i}`}
-                  checked={it.action === 'move'}
-                  onChange={() => onToggle(i, 'move')}
-                /> Move to:
+                <input type="radio" name={`act-${i}`} checked={it.action === 'move'} onChange={() => onToggle(i, 'move')} /> Move to:
               </label>
               <input
+                className="input"
                 type="text"
                 value={it.suggested_folder ?? ''}
-                onChange={(e) => onFolderChange(i, e.target.value)}
+                onChange={e => onFolderChange(i, e.target.value)}
                 disabled={it.action !== 'move'}
                 placeholder="Clean/"
-                style={{ flex: 1, padding: '6px 8px', borderRadius: 6, border: '1px solid #ddd' }}
               />
             </div>
           </div>
         ))}
       </div>
 
-      <div style={{ marginTop: 16 }}>
-        <button onClick={onConfirm} style={{ ...btn, background: '#2563eb' }}>Confirm & Apply</button>
+      <div style={{ marginTop: 20 }}>
+        <button className="btn btn-primary" onClick={onConfirm}>Confirm &amp; Apply</button>
       </div>
-    </div>
+    </>
   )
 }
 
 function Done() {
-  return <div style={{ padding: 24 }}>✅ Folders successfully changed.</div>
+  return <div className="center"></div>
 }
 
-function Badge({ text, color }: { text: string, color: string }) {
-  return (
-    <span style={{
-      fontSize: 12, padding: '3px 8px', borderRadius: 999,
-      background: color, color: 'white'
-    }}>{text}</span>
-  )
-}
+/* ---------- UI bits ---------- */
 
-const btn: React.CSSProperties = {
-  padding: '10px 14px',
-  borderRadius: 8,
-  background: '#111827',
-  color: 'white',
-  border: 'none',
-  cursor: 'pointer'
-}
-
-const card: React.CSSProperties = {
-  padding: 12,
-  border: '1px solid #eee',
-  borderRadius: 12,
-  background: 'white',
-  boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+function Badge({ text, tone }: { text: string; tone: 'green' | 'red' | 'orange' | 'gray' }) {
+  return <span className={`badge ${tone}`}>{text}</span>
 }
