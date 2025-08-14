@@ -32,7 +32,7 @@ async function createWindow() {
 
   if (isDev) {
     await mainWindow.loadURL('http://localhost:5173/');
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    // mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     const indexPath = path.join(__dirname, '..', 'frontend', 'dist', 'index.html');
     await mainWindow.loadFile(indexPath);

@@ -1,19 +1,25 @@
-__pycache__/
-*.pyc
 
-.venv/
-venv/
+## `.gitignore` (root)
 
-# Node/Electron
+```gitignore
+# Node
 node_modules/
-release/
 dist/
+*.log
+
+# Frontend build
+frontend/dist/
 
 # Python
 .venv/
+venv/
 __pycache__/
 *.pyc
+.pytest_cache/
 
-# OS
+# OS junk
 .DS_Store
 Thumbs.db
+
+# Editor
+.vscode/
