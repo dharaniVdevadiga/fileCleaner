@@ -1,5 +1,6 @@
-import React, { useState } from 'react'
 import './styles.css'
+import React, { useEffect, useState } from 'react'
+
 
 type Item = {
   file: string
@@ -30,6 +31,7 @@ export default function App() {
   const [items, setItems] = useState<Item[]>([])
   const [toast, setToast] = useState<string>('')
   const [previews, setPreviews] = useState<Record<string, string>>({}) 
+  const [loadingComplete, setLoadingComplete] = useState(false)
 
   const chooseFolder = async () => {
     const picked = await window.electronAPI.chooseFolder()
@@ -38,40 +40,45 @@ export default function App() {
   }
 
   const analyze = async () => {
-    if (!folder) return
-    setScreen('loading')
-    try {
-      const res = await fetch(`${API_BASE}/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ folder_path: folder })
+  if (!folder) return
+  setLoadingComplete(false)        
+  setScreen('loading')
+  try {
+    const res = await fetch(`${API_BASE}/analyze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ folder_path: folder })
+    })
+    if (!res.ok) throw new Error(`Analyze failed: ${res.status}`)
+    const data: Item[] = await res.json()
+
+    const normalized = data.map(it => ({
+      ...it,
+      action: it.action || 'move',
+      suggested_folder: it.suggested_folder ?? 'Clean/'
+    }))
+
+    setItems(normalized)
+    setLoadingComplete(true)        
+    // tiny delay so users see it hit 100%
+    setTimeout(() => setScreen('preview'), 150)
+
+    // load previews (unchanged)...
+    Promise.allSettled(
+      normalized.map(async (it) => {
+        try {
+          const src = await window.electronAPI.fileToDataURL(it.path)
+          setPreviews(prev => (prev[it.path] ? prev : { ...prev, [it.path]: src }))
+        } catch {}
       })
-      if (!res.ok) throw new Error(`Analyze failed: ${res.status}`)
-      const data: Item[] = await res.json()
-
-      const normalized = data.map(it => ({
-        ...it,
-        action: it.action || 'move',
-        suggested_folder: it.suggested_folder ?? 'Clean/'
-      }))
-
-      setItems(normalized)
-      setPreviews({}) 
-      setScreen('preview')
-
-      Promise.allSettled(
-        normalized.map(async (it) => {
-          try {
-            const src = await window.electronAPI.fileToDataURL(it.path)
-            setPreviews(prev => (prev[it.path] ? prev : { ...prev, [it.path]: src }))
-          } catch { /* ignore unreadable files */ }
-        })
-      )
-    } catch (e: any) {
-      setToast(e.message ?? 'Analyze failed')
-      setScreen('home')
-    }
+    )
+  } catch (e: any) {
+    setToast(e.message ?? 'Analyze failed')
+    setLoadingComplete(true)     
+    setTimeout(() => setScreen('home'), 150)
   }
+}
+
 
   const toggleAction = (idx: number, newAction: 'delete' | 'move') => {
     setItems(prev => prev.map((it, i) => (i === idx ? { ...it, action: newAction } : it)))
@@ -122,7 +129,7 @@ export default function App() {
         )}
 
         {screen === 'home' && <Home folder={folder} onPick={chooseFolder} onAnalyze={analyze} />}
-        {screen === 'loading' && <Loading />}
+        {screen === 'loading' && <Loading complete= {loadingComplete} />}
         {screen === 'preview' && (
           <Preview
             folder={folder}
@@ -156,14 +163,31 @@ function Home({ folder, onPick, onAnalyze }: { folder: string; onPick: () => voi
   )
 }
 
-function Loading() {
+function Loading({ complete }: { complete: boolean }) {
+  const [pct, setPct] = useState(8)
+
+  useEffect(() => {
+    let t: any
+    const tick = () => {
+      setPct(prev => {
+        const target = complete ? 100 : 90
+        const step = Math.max(1, Math.round((target - prev) / 6))
+        return Math.min(target, prev + step)
+      })
+      t = setTimeout(tick, 220)
+    }
+    tick()
+    return () => clearTimeout(t)
+  }, [complete])
+
   return (
     <>
       <h1 className="h1">2. Wait for the program to clean your files!</h1>
-      <div className="center">
-        <div className="card" style={{ padding: '18px 22px' }}>
-          Analyzing… <span className="spinner" />
+      <div className="progress-wrap">
+        <div className="progress" style={{ ['--w' as any]: `${pct}%` }}>
+          <div className="bar" />
         </div>
+        <div className="progress-label">Analyzing images… {pct}%</div>
       </div>
     </>
   )
